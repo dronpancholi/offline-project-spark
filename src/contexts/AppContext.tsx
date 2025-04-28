@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { 
   ProfileData, 
@@ -40,8 +39,6 @@ interface NotificationOptions {
   body: string;
   icon?: string;
   data?: any;
-  actions?: NotificationAction[];
-  vibrate?: number[];
 }
 
 interface AppContextProps {
@@ -246,7 +243,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         new Notification(options.title, {
           body: options.body,
           icon: options.icon,
-          vibrate: options.vibrate,
           data: options.data,
         });
       } catch (error) {
@@ -369,12 +365,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
 
-    // Update task as completed
+    // Update task as completed with proper type for status
     const completedTask: Task = {
       ...task,
       completed: true,
       completedAt: new Date().toISOString(),
-      status: 'completed'
+      status: 'completed' as const
     };
 
     // Remove from active tasks list
@@ -433,7 +429,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const task = completedTasks.find(t => t.id === taskId);
     if (!task) return;
 
-    // Update task as not completed
+    // Fixed the status type to use a proper union type value
     const uncompleteTask: Task = {
       ...task,
       completed: false,
@@ -611,12 +607,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const tasksToComplete = tasks.filter(task => taskIds.includes(task.id));
     if (tasksToComplete.length === 0) return;
     
-    // Get completed tasks
+    // Get completed tasks with proper type for status
     const completedTasksList = tasksToComplete.map(task => ({
       ...task,
       completed: true,
       completedAt: new Date().toISOString(),
-      status: 'completed'
+      status: 'completed' as const
     }));
     
     // Update active tasks list
@@ -626,9 +622,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return filteredTasks;
     });
     
-    // Update completed tasks list
+    // Update completed tasks list - explicitly typed as Task[]
     setCompletedTasks(prevCompleted => {
-      const updatedCompleted = [...prevCompleted, ...completedTasksList];
+      const updatedCompleted = [...prevCompleted, ...completedTasksList] as Task[];
       saveCompletedTasks(updatedCompleted).catch(err => console.error('Failed to save completed tasks', err));
       return updatedCompleted;
     });
