@@ -9,6 +9,7 @@ import { format, isSameDay, parseISO } from 'date-fns';
 import { Link } from 'react-router-dom';
 import { Plus, CalendarIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { DayContentProps } from 'react-day-picker';
 
 export function CalendarView() {
   const { tasks } = useApp();
@@ -67,7 +68,7 @@ export function CalendarView() {
               onSelect={setSelectedDate}
               className="rounded-md"
               components={{
-                DayContent: (props) => (
+                DayContent: (props: DayContentProps) => (
                   <>
                     <div>{format(props.date, 'd')}</div>
                     {renderDay(props.date)}

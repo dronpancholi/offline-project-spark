@@ -18,13 +18,18 @@ import CalendarPage from "./pages/CalendarPage";
 import ProgressPage from "./pages/ProgressPage";
 import SettingsPage from "./pages/SettingsPage";
 import NotFound from "./pages/NotFound";
+import { LoadingScreen } from "@/components/ui/loading-screen";
 
 const queryClient = new QueryClient();
 
 // Protected route component that checks if the user has completed onboarding
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const { isOnboarded, profile } = useApp();
+  const { isOnboarded, profile, isLoading } = useApp();
 
+  if (isLoading) {
+    return <LoadingScreen />;
+  }
+  
   if (!isOnboarded) {
     return <Navigate to="/" replace />;
   }
@@ -38,8 +43,12 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 
 // Route component that redirects to dashboard if user is already onboarded
 const OnboardingRoute = ({ children }: { children: React.ReactNode }) => {
-  const { isOnboarded, profile } = useApp();
+  const { isOnboarded, profile, isLoading } = useApp();
 
+  if (isLoading) {
+    return <LoadingScreen />;
+  }
+  
   if (isOnboarded && profile) {
     return <Navigate to="/dashboard" replace />;
   }
