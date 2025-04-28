@@ -4,7 +4,7 @@ import {
   FileText,
   Globe,
   Bell,
-  Input
+  Search // Replacing Input with Search icon which is available in lucide-react
 } from "lucide-react";
 
 import { BentoCard, BentoGrid } from "@/components/ui/bento-grid";
@@ -20,7 +20,7 @@ const features = [
     className: "lg:row-start-1 lg:row-end-4 lg:col-start-2 lg:col-end-3",
   },
   {
-    Icon: Input,
+    Icon: Search, // Updated to use Search icon instead of Input
     name: "Full text search",
     description: "Search through all your files in one place.",
     href: "/",
