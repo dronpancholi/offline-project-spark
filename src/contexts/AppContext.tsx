@@ -34,6 +34,16 @@ import {
   calculatePointsToday
 } from '@/lib/points';
 
+// For notification support
+interface NotificationOptions {
+  title: string;
+  body: string;
+  icon?: string;
+  data?: any;
+  actions?: NotificationAction[];
+  vibrate?: number[];
+}
+
 interface AppContextProps {
   // Loading state
   isLoading: boolean;
@@ -53,12 +63,19 @@ interface AppContextProps {
   deleteTask: (taskId: string) => void;
   completeTask: (taskId: string) => void;
   uncompleteTask: (taskId: string) => void;
+  updateTaskDueDate: (taskId: string, newDate: string) => void;
   
   // Checklist items
   addChecklistItem: (taskId: string, text: string) => void;
   updateChecklistItem: (taskId: string, item: ChecklistItem) => void;
   removeChecklistItem: (taskId: string, itemId: string) => void;
   toggleChecklistItem: (taskId: string, itemId: string) => void;
+  
+  // Bulk operations
+  bulkDeleteTasks: (taskIds: string[]) => void;
+  bulkCompleteTasks: (taskIds: string[]) => void;
+  bulkChangePriority: (taskIds: string[], priority: 'high' | 'medium' | 'low') => void;
+  bulkChangeCategory: (taskIds: string[], categoryId: string) => void;
   
   // Completed tasks
   completedTasks: Task[];
@@ -75,6 +92,9 @@ interface AppContextProps {
   addCategory: (category: Omit<Category, 'id'>) => void;
   updateCategory: (category: Category) => void;
   deleteCategory: (categoryId: string) => void;
+  
+  // Notifications
+  sendNotification: (options: NotificationOptions) => void;
   
   // Data management
   resetAllData: () => void;
@@ -99,6 +119,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   
   // Toast notification
   const { toast: uiToast } = useToast();
+  
+  // Notification permission state
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | null>(null);
+
+  // Check notification permission on mount
+  useEffect(() => {
+    if ('Notification' in window) {
+      setNotificationPermission(Notification.permission);
+    }
+  }, []);
 
   // Load data from IndexedDB on initial mount
   useEffect(() => {
@@ -159,6 +189,79 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       document.documentElement.classList.remove('dark');
     }
   }, [settings.darkMode, settings.theme]);
+  
+  // Process notifications for tasks with reminders
+  useEffect(() => {
+    if (!settings.enableReminders || !('Notification' in window) || Notification.permission !== 'granted') {
+      return;
+    }
+
+    // Check for tasks that need reminders
+    const checkReminders = () => {
+      const now = new Date();
+      
+      tasks.forEach(task => {
+        if (!task.dueDate || !task.reminder || task.completed) return;
+        
+        const dueDate = new Date(task.dueDate);
+        if (task.dueTime) {
+          const [hours, minutes] = task.dueTime.split(':').map(Number);
+          dueDate.setHours(hours, minutes, 0, 0);
+        }
+        
+        // Calculate when reminder should trigger
+        const reminderMinutes = parseInt(task.reminder);
+        const reminderTime = new Date(dueDate.getTime() - reminderMinutes * 60000);
+        
+        // Check if reminder should show now (within the last minute)
+        const timeDiff = Math.abs(reminderTime.getTime() - now.getTime());
+        if (timeDiff <= 60000) { // Within 1 minute
+          sendNotification({
+            title: `Reminder: ${task.title}`,
+            body: `Due ${reminderMinutes === 1440 ? 'tomorrow' : `in ${reminderMinutes} minute${reminderMinutes !== 1 ? 's' : ''}`}`
+          });
+        }
+      });
+    };
+    
+    // Check reminders every minute
+    const intervalId = setInterval(checkReminders, 60000);
+    
+    // Initial check
+    checkReminders();
+    
+    // Cleanup timer on unmount
+    return () => clearInterval(intervalId);
+  }, [tasks, settings.enableReminders]);
+
+  // Send notification helper
+  const sendNotification = (options: NotificationOptions) => {
+    if (!('Notification' in window)) {
+      console.warn('This browser does not support notifications');
+      return;
+    }
+    
+    if (Notification.permission === 'granted') {
+      try {
+        new Notification(options.title, {
+          body: options.body,
+          icon: options.icon,
+          vibrate: options.vibrate,
+          data: options.data,
+        });
+      } catch (error) {
+        console.error('Error sending notification:', error);
+      }
+    } else if (Notification.permission !== 'denied') {
+      Notification.requestPermission().then(permission => {
+        setNotificationPermission(permission);
+        
+        if (permission === 'granted') {
+          sendNotification(options);
+        }
+      });
+    }
+  };
 
   // Mark app as onboarded
   const markAsOnboarded = async () => {
@@ -193,13 +296,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Update an existing task
   const updateTask = async (updatedTask: Task) => {
-    setTasks(prevTasks => {
-      const newTasks = prevTasks.map(task => 
-        task.id === updatedTask.id ? updatedTask : task
-      );
-      saveTasks(newTasks).catch(err => console.error('Failed to save tasks', err));
-      return newTasks;
-    });
+    // Check if the task is in completed or active tasks
+    if (updatedTask.completed) {
+      setCompletedTasks(prevTasks => {
+        const newTasks = prevTasks.map(task => 
+          task.id === updatedTask.id ? updatedTask : task
+        );
+        saveCompletedTasks(newTasks).catch(err => console.error('Failed to save completed tasks', err));
+        return newTasks;
+      });
+    } else {
+      setTasks(prevTasks => {
+        const newTasks = prevTasks.map(task => 
+          task.id === updatedTask.id ? updatedTask : task
+        );
+        saveTasks(newTasks).catch(err => console.error('Failed to save tasks', err));
+        return newTasks;
+      });
+    }
     
     toast('Task updated');
   };
@@ -259,7 +373,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const completedTask: Task = {
       ...task,
       completed: true,
-      completedAt: new Date().toISOString()
+      completedAt: new Date().toISOString(),
+      status: 'completed'
     };
 
     // Remove from active tasks list
@@ -282,6 +397,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     
     setProgress(prevProgress => {
       const newPoints = prevProgress.points + points;
+      const newLevel = Math.floor(newPoints / 100) + 1;
       
       // Calculate streak
       let newStreak = prevProgress.streak;
@@ -299,6 +415,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const updatedProgress = {
         ...prevProgress,
         points: newPoints,
+        level: newLevel,
         streak: newStreak,
         lastTaskCompletionDate: today
       };
@@ -320,7 +437,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const uncompleteTask: Task = {
       ...task,
       completed: false,
-      completedAt: undefined
+      completedAt: undefined,
+      status: task.status === 'completed' ? 'scheduled' : task.status
     };
 
     // Remove from completed tasks
@@ -343,12 +461,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setProgress(prevProgress => {
       // Subtract points, but ensure we don't go below 0
       const newPoints = Math.max(0, prevProgress.points - points);
+      const newLevel = Math.floor(newPoints / 100) + 1;
       
       // Note: We don't adjust the streak here
       
       const updatedProgress = {
         ...prevProgress,
         points: newPoints,
+        level: newLevel
       };
       
       saveProgress(updatedProgress).catch(err => console.error('Failed to save progress', err));
@@ -358,9 +478,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     toast('Task moved back to active');
   };
 
+  // Update task due date (for drag and drop in calendar)
+  const updateTaskDueDate = async (taskId: string, newDate: string) => {
+    // Find task in either active or completed tasks
+    let task = tasks.find(t => t.id === taskId);
+    let isCompleted = false;
+    
+    if (!task) {
+      task = completedTasks.find(t => t.id === taskId);
+      isCompleted = true;
+      if (!task) return;
+    }
+    
+    // Update the task with new due date
+    const updatedTask = {
+      ...task,
+      dueDate: newDate
+    };
+    
+    // Update in the appropriate list
+    if (isCompleted) {
+      setCompletedTasks(prev => {
+        const updated = prev.map(t => t.id === taskId ? updatedTask : t);
+        saveCompletedTasks(updated).catch(err => console.error('Failed to save completed tasks', err));
+        return updated;
+      });
+    } else {
+      setTasks(prev => {
+        const updated = prev.map(t => t.id === taskId ? updatedTask : t);
+        saveTasks(updated).catch(err => console.error('Failed to save tasks', err));
+        return updated;
+      });
+    }
+    
+    toast('Task rescheduled');
+  };
+
   // Checklist items management
   const addChecklistItem = async (taskId: string, text: string) => {
-    const task = tasks.find(t => t.id === taskId);
+    const task = tasks.find(t => t.id === taskId) || completedTasks.find(t => t.id === taskId);
     if (!task) return;
     
     const newItem: ChecklistItem = {
@@ -375,11 +531,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     
     await updateTask(updatedTask);
-    toast('Checklist item added');
   };
   
   const updateChecklistItem = async (taskId: string, item: ChecklistItem) => {
-    const task = tasks.find(t => t.id === taskId);
+    const task = tasks.find(t => t.id === taskId) || completedTasks.find(t => t.id === taskId);
     if (!task || !task.checklist) return;
     
     const updatedChecklist = task.checklist.map(
@@ -395,7 +550,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
   
   const removeChecklistItem = async (taskId: string, itemId: string) => {
-    const task = tasks.find(t => t.id === taskId);
+    const task = tasks.find(t => t.id === taskId) || completedTasks.find(t => t.id === taskId);
     if (!task || !task.checklist) return;
     
     const updatedChecklist = task.checklist.filter(item => item.id !== itemId);
@@ -406,11 +561,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     
     await updateTask(updatedTask);
-    toast('Checklist item removed');
   };
   
   const toggleChecklistItem = async (taskId: string, itemId: string) => {
-    const task = tasks.find(t => t.id === taskId);
+    const task = tasks.find(t => t.id === taskId) || completedTasks.find(t => t.id === taskId);
     if (!task || !task.checklist) return;
     
     const updatedChecklist = task.checklist.map(item => 
@@ -423,6 +577,137 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
     
     await updateTask(updatedTask);
+  };
+
+  // Bulk operations
+  const bulkDeleteTasks = async (taskIds: string[]) => {
+    // Find tasks to delete
+    const activeTasksToDelete = tasks.filter(task => taskIds.includes(task.id));
+    const completedTasksToDelete = completedTasks.filter(task => taskIds.includes(task.id));
+    
+    // Remove active tasks
+    if (activeTasksToDelete.length > 0) {
+      setTasks(prevTasks => {
+        const filteredTasks = prevTasks.filter(task => !taskIds.includes(task.id));
+        saveTasks(filteredTasks).catch(err => console.error('Failed to save tasks', err));
+        return filteredTasks;
+      });
+    }
+    
+    // Remove completed tasks
+    if (completedTasksToDelete.length > 0) {
+      setCompletedTasks(prevTasks => {
+        const filteredTasks = prevTasks.filter(task => !taskIds.includes(task.id));
+        saveCompletedTasks(filteredTasks).catch(err => console.error('Failed to save completed tasks', err));
+        return filteredTasks;
+      });
+    }
+    
+    toast(`${taskIds.length} tasks deleted`);
+  };
+  
+  const bulkCompleteTasks = async (taskIds: string[]) => {
+    // Find active tasks to complete
+    const tasksToComplete = tasks.filter(task => taskIds.includes(task.id));
+    if (tasksToComplete.length === 0) return;
+    
+    // Get completed tasks
+    const completedTasksList = tasksToComplete.map(task => ({
+      ...task,
+      completed: true,
+      completedAt: new Date().toISOString(),
+      status: 'completed'
+    }));
+    
+    // Update active tasks list
+    setTasks(prevTasks => {
+      const filteredTasks = prevTasks.filter(task => !taskIds.includes(task.id));
+      saveTasks(filteredTasks).catch(err => console.error('Failed to save tasks', err));
+      return filteredTasks;
+    });
+    
+    // Update completed tasks list
+    setCompletedTasks(prevCompleted => {
+      const updatedCompleted = [...prevCompleted, ...completedTasksList];
+      saveCompletedTasks(updatedCompleted).catch(err => console.error('Failed to save completed tasks', err));
+      return updatedCompleted;
+    });
+    
+    // Update progress
+    let totalPoints = 0;
+    tasksToComplete.forEach(task => {
+      totalPoints += getTaskPoints(task);
+    });
+    
+    setProgress(prevProgress => {
+      const newPoints = prevProgress.points + totalPoints;
+      const newLevel = Math.floor(newPoints / 100) + 1;
+      
+      const updatedProgress = {
+        ...prevProgress,
+        points: newPoints,
+        level: newLevel,
+        lastTaskCompletionDate: new Date().toISOString()
+      };
+      
+      // Only update streak if it hasn't been updated today
+      if (!hasCompletedTaskToday(prevProgress.lastTaskCompletionDate)) {
+        if (isStreakMaintained(prevProgress.lastTaskCompletionDate)) {
+          updatedProgress.streak = prevProgress.streak + 1;
+        } else {
+          updatedProgress.streak = 1;
+        }
+      }
+      
+      saveProgress(updatedProgress).catch(err => console.error('Failed to save progress', err));
+      return updatedProgress;
+    });
+    
+    toast(`${taskIds.length} tasks completed (+${totalPoints} points)`);
+  };
+  
+  const bulkChangePriority = async (taskIds: string[], priority: 'high' | 'medium' | 'low') => {
+    // Update active tasks
+    setTasks(prevTasks => {
+      const updatedTasks = prevTasks.map(task => 
+        taskIds.includes(task.id) ? { ...task, priority } : task
+      );
+      saveTasks(updatedTasks).catch(err => console.error('Failed to save tasks', err));
+      return updatedTasks;
+    });
+    
+    // Update completed tasks
+    setCompletedTasks(prevTasks => {
+      const updatedTasks = prevTasks.map(task => 
+        taskIds.includes(task.id) ? { ...task, priority } : task
+      );
+      saveCompletedTasks(updatedTasks).catch(err => console.error('Failed to save completed tasks', err));
+      return updatedTasks;
+    });
+    
+    toast(`Updated priority for ${taskIds.length} tasks`);
+  };
+  
+  const bulkChangeCategory = async (taskIds: string[], categoryId: string) => {
+    // Update active tasks
+    setTasks(prevTasks => {
+      const updatedTasks = prevTasks.map(task => 
+        taskIds.includes(task.id) ? { ...task, category: categoryId } : task
+      );
+      saveTasks(updatedTasks).catch(err => console.error('Failed to save tasks', err));
+      return updatedTasks;
+    });
+    
+    // Update completed tasks
+    setCompletedTasks(prevTasks => {
+      const updatedTasks = prevTasks.map(task => 
+        taskIds.includes(task.id) ? { ...task, category: categoryId } : task
+      );
+      saveCompletedTasks(updatedTasks).catch(err => console.error('Failed to save completed tasks', err));
+      return updatedTasks;
+    });
+    
+    toast(`Updated category for ${taskIds.length} tasks`);
   };
 
   // Update settings
@@ -602,12 +887,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         deleteTask,
         completeTask,
         uncompleteTask,
+        updateTaskDueDate,
         
         // Checklist items
         addChecklistItem,
         updateChecklistItem,
         removeChecklistItem,
         toggleChecklistItem,
+        
+        // Bulk operations
+        bulkDeleteTasks,
+        bulkCompleteTasks,
+        bulkChangePriority,
+        bulkChangeCategory,
         
         // Completed tasks
         completedTasks,
@@ -624,6 +916,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         addCategory,
         updateCategory,
         deleteCategory,
+        
+        // Notifications
+        sendNotification,
         
         // Data management
         resetAllData,

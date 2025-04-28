@@ -17,6 +17,7 @@ import { Task, ChecklistItem } from '@/lib/storage';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
+import { toast } from 'sonner';
 
 interface TaskFormProps {
   existingTask?: Task;
@@ -24,7 +25,7 @@ interface TaskFormProps {
 
 export function TaskForm({ existingTask }: TaskFormProps) {
   const navigate = useNavigate();
-  const { addTask, updateTask, categories, addChecklistItem, removeChecklistItem, toggleChecklistItem } = useApp();
+  const { addTask, updateTask, categories } = useApp();
   
   const [formData, setFormData] = useState<Omit<Task, 'id' | 'createdAt' | 'completed' | 'completedAt'>>({
     title: existingTask?.title || '',
@@ -39,15 +40,26 @@ export function TaskForm({ existingTask }: TaskFormProps) {
     checklist: existingTask?.checklist || [],
     notes: existingTask?.notes || '',
     repeat: existingTask?.repeat || 'none',
+    status: existingTask?.status || 'scheduled',
+    startDate: existingTask?.startDate,
+    startTime: existingTask?.startTime,
+    tags: existingTask?.tags || [],
   });
 
   const [errors, setErrors] = useState<Partial<Record<keyof typeof formData, string>>>({});
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(
     formData.dueDate ? new Date(formData.dueDate) : undefined
   );
+  const [startDate, setStartDate] = useState<Date | undefined>(
+    formData.startDate ? new Date(formData.startDate) : undefined
+  );
+  const [activeTab, setActiveTab] = useState('basic');
   
   // For checklist
   const [newChecklistItem, setNewChecklistItem] = useState('');
+
+  // For tags
+  const [newTag, setNewTag] = useState('');
 
   // Colors for color tag selection
   const colorOptions = [
@@ -81,8 +93,10 @@ export function TaskForm({ existingTask }: TaskFormProps) {
           ...existingTask,
           ...formData
         });
+        toast('Task updated successfully');
       } else {
         addTask(formData);
+        toast('Task created successfully');
       }
       navigate('/tasks');
     }
@@ -103,12 +117,24 @@ export function TaskForm({ existingTask }: TaskFormProps) {
     }
   };
   
+  const handleStartDateSelect = (date: Date | undefined) => {
+    setStartDate(date);
+    if (date) {
+      setFormData(prev => ({
+        ...prev,
+        startDate: date.toISOString()
+      }));
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        startDate: undefined
+      }));
+    }
+  };
+  
   // Handle adding a checklist item
   const handleAddChecklistItem = () => {
-    if (newChecklistItem.trim() && existingTask) {
-      addChecklistItem(existingTask.id, newChecklistItem.trim());
-      setNewChecklistItem('');
-    } else if (newChecklistItem.trim()) {
+    if (newChecklistItem.trim()) {
       const newItem: ChecklistItem = {
         id: crypto.randomUUID(),
         text: newChecklistItem.trim(),
@@ -126,28 +152,43 @@ export function TaskForm({ existingTask }: TaskFormProps) {
   
   // Handle removing a checklist item
   const handleRemoveChecklistItem = (itemId: string) => {
-    if (existingTask) {
-      removeChecklistItem(existingTask.id, itemId);
-    } else {
-      setFormData(prev => ({
-        ...prev,
-        checklist: (prev.checklist || []).filter(item => item.id !== itemId)
-      }));
-    }
+    setFormData(prev => ({
+      ...prev,
+      checklist: (prev.checklist || []).filter(item => item.id !== itemId)
+    }));
   };
   
   // Handle toggling a checklist item
   const handleToggleChecklistItem = (itemId: string) => {
-    if (existingTask) {
-      toggleChecklistItem(existingTask.id, itemId);
-    } else {
+    setFormData(prev => ({
+      ...prev,
+      checklist: (prev.checklist || []).map(item => 
+        item.id === itemId ? { ...item, completed: !item.completed } : item
+      )
+    }));
+  };
+
+  // Handle adding a tag
+  const handleAddTag = () => {
+    if (newTag.trim() && !formData.tags?.includes(newTag.trim())) {
       setFormData(prev => ({
         ...prev,
-        checklist: (prev.checklist || []).map(item => 
-          item.id === itemId ? { ...item, completed: !item.completed } : item
-        )
+        tags: [...(prev.tags || []), newTag.trim()]
       }));
+      setNewTag('');
     }
+  };
+
+  // Handle removing a tag
+  const handleRemoveTag = (tagToRemove: string) => {
+    setFormData(prev => ({
+      ...prev,
+      tags: (prev.tags || []).filter(tag => tag !== tagToRemove)
+    }));
+  };
+
+  const handleTabChange = (value: string) => {
+    setActiveTab(value);
   };
 
   return (
@@ -158,7 +199,7 @@ export function TaskForm({ existingTask }: TaskFormProps) {
         </CardHeader>
         
         <CardContent>
-          <Tabs defaultValue="basic" className="w-full">
+          <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
             <TabsList className="grid w-full grid-cols-3 mb-6">
               <TabsTrigger value="basic">Basic Info</TabsTrigger>
               <TabsTrigger value="details">Details</TabsTrigger>
@@ -196,7 +237,7 @@ export function TaskForm({ existingTask }: TaskFormProps) {
                 />
               </div>
 
-              {/* Priority & Intensity */}
+              {/* Priority & Status */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="priority">Priority</Label>
@@ -217,7 +258,32 @@ export function TaskForm({ existingTask }: TaskFormProps) {
                     </SelectContent>
                   </Select>
                 </div>
-                
+
+                <div className="space-y-2">
+                  <Label htmlFor="status">Status</Label>
+                  <Select 
+                    value={formData.status || 'scheduled'}
+                    onValueChange={value => setFormData(prev => ({ 
+                      ...prev, 
+                      status: value as 'scheduled' | 'in-progress' | 'completed' | 'overdue' | 'missed'
+                    }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="scheduled">Scheduled</SelectItem>
+                      <SelectItem value="in-progress">In Progress</SelectItem>
+                      <SelectItem value="completed">Completed</SelectItem>
+                      <SelectItem value="overdue">Overdue</SelectItem>
+                      <SelectItem value="missed">Missed</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Intensity & Category */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="intensity">Task Intensity</Label>
                   <Select 
@@ -236,6 +302,28 @@ export function TaskForm({ existingTask }: TaskFormProps) {
                       <SelectItem value="big">Big (+20 points)</SelectItem>
                       <SelectItem value="giant">Giant (+40 points)</SelectItem>
                       <SelectItem value="optional">Optional (+2 points)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="category">Category</Label>
+                  <Select 
+                    value={formData.category}
+                    onValueChange={value => setFormData(prev => ({ 
+                      ...prev, 
+                      category: value
+                    }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories.map(category => (
+                        <SelectItem key={category.id} value={category.id}>
+                          {category.name}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -284,55 +372,71 @@ export function TaskForm({ existingTask }: TaskFormProps) {
             
             {/* Details Tab */}
             <TabsContent value="details" className="space-y-6">
-              {/* Category & Color Tag */}
+              {/* Start Date & Time */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="category">Category</Label>
-                  <Select 
-                    value={formData.category}
-                    onValueChange={value => setFormData(prev => ({ 
-                      ...prev, 
-                      category: value
-                    }))}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select category" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {categories.map(category => (
-                        <SelectItem key={category.id} value={category.id}>
-                          {category.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label>Start Date</Label>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className={cn(
+                          "w-full justify-start text-left font-normal",
+                          !startDate && "text-muted-foreground"
+                        )}
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {startDate ? format(startDate, "PPP") : <span>Select start date</span>}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={startDate}
+                        onSelect={handleStartDateSelect}
+                        initialFocus
+                        className="p-3 pointer-events-auto"
+                      />
+                    </PopoverContent>
+                  </Popover>
                 </div>
                 
                 <div className="space-y-2">
-                  <Label>Color Tag</Label>
-                  <div className="grid grid-cols-4 gap-2 mt-2">
-                    {colorOptions.map((color, index) => (
-                      <div
-                        key={index}
-                        className={cn(
-                          "h-8 rounded-full cursor-pointer transform transition-transform",
-                          formData.colorTag === color ? "ring-2 ring-primary scale-110" : "hover:scale-105"
-                        )}
-                        style={{ backgroundColor: color }}
-                        onClick={() => setFormData(prev => ({ ...prev, colorTag: color }))}
-                      />
-                    ))}
-                    
-                    {/* Clear color option */}
-                    {formData.colorTag && (
-                      <div
-                        className="h-8 rounded-full cursor-pointer border border-dashed border-muted-foreground flex items-center justify-center"
-                        onClick={() => setFormData(prev => ({ ...prev, colorTag: undefined }))}
-                      >
-                        <span className="text-xs text-muted-foreground">Clear</span>
-                      </div>
-                    )}
-                  </div>
+                  <Label htmlFor="startTime">Start Time</Label>
+                  <Input
+                    id="startTime"
+                    type="time"
+                    value={formData.startTime || ''}
+                    onChange={e => setFormData(prev => ({ ...prev, startTime: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              {/* Color Tag */}
+              <div className="space-y-2">
+                <Label>Color Tag</Label>
+                <div className="grid grid-cols-4 gap-2 mt-2">
+                  {colorOptions.map((color, index) => (
+                    <div
+                      key={index}
+                      className={cn(
+                        "h-8 rounded-full cursor-pointer transform transition-transform",
+                        formData.colorTag === color ? "ring-2 ring-primary scale-110" : "hover:scale-105"
+                      )}
+                      style={{ backgroundColor: color }}
+                      onClick={() => setFormData(prev => ({ ...prev, colorTag: color }))}
+                    />
+                  ))}
+                  
+                  {/* Clear color option */}
+                  {formData.colorTag && (
+                    <div
+                      className="h-8 rounded-full cursor-pointer border border-dashed border-muted-foreground flex items-center justify-center"
+                      onClick={() => setFormData(prev => ({ ...prev, colorTag: undefined }))}
+                    >
+                      <span className="text-xs text-muted-foreground">Clear</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -343,7 +447,7 @@ export function TaskForm({ existingTask }: TaskFormProps) {
                   value={formData.repeat || 'none'}
                   onValueChange={value => setFormData(prev => ({ 
                     ...prev, 
-                    repeat: value as 'none' | 'daily' | 'weekly' | 'monthly'
+                    repeat: value as 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly'
                   }))}
                 >
                   <SelectTrigger>
@@ -354,6 +458,7 @@ export function TaskForm({ existingTask }: TaskFormProps) {
                     <SelectItem value="daily">Daily</SelectItem>
                     <SelectItem value="weekly">Weekly</SelectItem>
                     <SelectItem value="monthly">Monthly</SelectItem>
+                    <SelectItem value="yearly">Yearly</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -380,6 +485,49 @@ export function TaskForm({ existingTask }: TaskFormProps) {
                     <SelectItem value="1440">1 day before</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              
+              {/* Tags */}
+              <div className="space-y-2">
+                <Label>Tags</Label>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {formData.tags?.map((tag) => (
+                    <div 
+                      key={tag} 
+                      className="bg-secondary/70 text-secondary-foreground px-2 py-1 rounded-md text-sm flex items-center gap-1"
+                    >
+                      {tag}
+                      <button 
+                        type="button" 
+                        onClick={() => handleRemoveTag(tag)}
+                        className="text-secondary-foreground/70 hover:text-secondary-foreground"
+                      >
+                        <TrashIcon className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <Input 
+                    placeholder="Add a tag" 
+                    value={newTag}
+                    onChange={e => setNewTag(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddTag();
+                      }
+                    }}
+                  />
+                  <Button 
+                    type="button" 
+                    onClick={handleAddTag} 
+                    variant="secondary"
+                    disabled={!newTag.trim()}
+                  >
+                    Add
+                  </Button>
+                </div>
               </div>
               
               {/* Notes */}

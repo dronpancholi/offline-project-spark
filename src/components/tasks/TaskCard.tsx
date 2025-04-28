@@ -20,7 +20,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { format, isPast, isToday } from 'date-fns';
-import { Check, Pencil, Trash2, MoreHorizontal, X } from 'lucide-react';
+import { Check, Pencil, Trash2, MoreHorizontal, X, Clock } from 'lucide-react';
 import { Task } from '@/lib/storage';
 import { cn } from '@/lib/utils';
 
@@ -42,8 +42,22 @@ export function TaskCard({ task, showCompleted = false }: TaskCardProps) {
     ? format(new Date(task.dueDate), 'MMM d, yyyy')
     : '';
   
+  // Format start date if available
+  const formattedStartDate = task.startDate
+    ? format(new Date(task.startDate), 'MMM d, yyyy')
+    : '';
+    
   // Check if task is overdue
   const isOverdue = task.dueDate && !task.completed && isPast(new Date(task.dueDate)) && !isToday(new Date(task.dueDate));
+
+  // Get status color
+  const getStatusColor = () => {
+    if (task.completed) return "bg-green-500";
+    if (task.status === 'in-progress') return "bg-blue-500";
+    if (task.status === 'overdue' || isOverdue) return "bg-red-500";
+    if (task.status === 'missed') return "bg-amber-500";
+    return "bg-gray-400"; // default for scheduled
+  };
 
   // Handle task completion
   const handleCompleteTask = () => {
@@ -69,9 +83,12 @@ export function TaskCard({ task, showCompleted = false }: TaskCardProps) {
     >
       <CardHeader className="pb-2">
         <div className="flex justify-between items-start">
-          <CardTitle className="text-lg font-semibold line-clamp-2">
-            {task.title}
-          </CardTitle>
+          <div className="flex items-center gap-2">
+            <div className={cn("w-3 h-3 rounded-full", getStatusColor())} />
+            <CardTitle className="text-lg font-semibold line-clamp-2">
+              {task.title}
+            </CardTitle>
+          </div>
           
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -123,6 +140,15 @@ export function TaskCard({ task, showCompleted = false }: TaskCardProps) {
             {isOverdue && <span className="ml-2 font-medium">(Overdue)</span>}
           </CardDescription>
         )}
+        
+        {/* Start date/time if available */}
+        {task.startDate && (
+          <CardDescription className="flex items-center mt-1">
+            <Clock className="h-3 w-3 mr-1" />
+            <span>Starts: {formattedStartDate}</span>
+            {task.startTime && <span className="ml-1">at {task.startTime}</span>}
+          </CardDescription>
+        )}
       </CardHeader>
       
       <CardContent>
@@ -144,6 +170,38 @@ export function TaskCard({ task, showCompleted = false }: TaskCardProps) {
           <Badge variant="outline" className={`category-${task.category}`}>
             {categoryName}
           </Badge>
+          
+          {task.repeat && task.repeat !== 'none' && (
+            <Badge variant="outline" className="bg-blue-100 dark:bg-blue-900/30">
+              {task.repeat.charAt(0).toUpperCase() + task.repeat.slice(1)}
+            </Badge>
+          )}
+          
+          {/* Show tags if available */}
+          {task.tags && task.tags.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-2 w-full">
+              {task.tags.slice(0, 3).map(tag => (
+                <span 
+                  key={tag} 
+                  className="text-xs bg-secondary/50 px-1.5 py-0.5 rounded text-secondary-foreground"
+                >
+                  #{tag}
+                </span>
+              ))}
+              {task.tags.length > 3 && (
+                <span className="text-xs bg-secondary/30 px-1.5 py-0.5 rounded text-secondary-foreground">
+                  +{task.tags.length - 3} more
+                </span>
+              )}
+            </div>
+          )}
+          
+          {/* Show checklist summary if available */}
+          {task.checklist && task.checklist.length > 0 && (
+            <div className="w-full mt-2 text-xs text-muted-foreground">
+              {task.checklist.filter(item => item.completed).length} of {task.checklist.length} items completed
+            </div>
+          )}
         </div>
       </CardContent>
       

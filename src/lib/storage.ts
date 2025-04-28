@@ -188,6 +188,8 @@ export interface Task {
   description?: string;
   dueDate?: string;
   dueTime?: string;
+  startDate?: string;
+  startTime?: string;
   priority: 'high' | 'medium' | 'low';
   intensity: 'small' | 'medium' | 'big' | 'giant' | 'optional';
   category: string;
@@ -195,10 +197,13 @@ export interface Task {
   reminder?: string;
   checklist?: ChecklistItem[];
   notes?: string;
-  repeat?: 'daily' | 'weekly' | 'monthly' | 'none';
+  repeat?: 'daily' | 'weekly' | 'monthly' | 'yearly' | 'none';
   createdAt: string;
   completed: boolean;
   completedAt?: string;
+  status?: 'scheduled' | 'in-progress' | 'completed' | 'overdue' | 'missed';
+  tags?: string[];
+  attachments?: string[];
 }
 
 export interface ChecklistItem {
