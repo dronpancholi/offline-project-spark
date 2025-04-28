@@ -1,6 +1,6 @@
 
 import { useApp } from '@/contexts/AppContext';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -13,7 +13,16 @@ interface AppLayoutProps {
 export function AppLayout({ children }: AppLayoutProps) {
   const { profile } = useApp();
   const location = useLocation();
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    // Get the sidebar state from localStorage or default to true
+    const savedState = localStorage.getItem('sidebarState');
+    return savedState ? JSON.parse(savedState) : true;
+  });
+  
+  // Save sidebar state to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem('sidebarState', JSON.stringify(sidebarOpen));
+  }, [sidebarOpen]);
   
   // Nav items
   const navItems = [
