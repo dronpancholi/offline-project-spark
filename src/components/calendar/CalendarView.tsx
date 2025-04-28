@@ -30,8 +30,8 @@ export function CalendarView() {
   };
 
   // Render calendar day content with task indicator
-  const renderDay = (day: Date) => {
-    const dayTasks = getTasksForDay(day);
+  const renderDay = (date: Date) => {
+    const dayTasks = getTasksForDay(date);
     const totalTasks = dayTasks.length;
     
     if (totalTasks === 0) return null;
@@ -67,10 +67,10 @@ export function CalendarView() {
               onSelect={setSelectedDate}
               className="rounded-md"
               components={{
-                DayContent: ({ day }) => (
+                DayContent: (props) => (
                   <>
-                    <div>{format(day, 'd')}</div>
-                    {renderDay(day)}
+                    <div>{format(props.date, 'd')}</div>
+                    {renderDay(props.date)}
                   </>
                 ),
               }}
